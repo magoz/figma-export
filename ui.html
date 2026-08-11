@@ -1,0 +1,257 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --bg: #ffffff;
+    --ink: #1a1a2e;
+    --muted: #6b6b80;
+    --border: #e4e4ee;
+    --accent: #8b4cff;
+    --accent-ink: #ffffff;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font: 11px/1.5 Inter, -apple-system, system-ui, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    padding: 16px;
+  }
+  h1 { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .sub { color: var(--muted); margin-bottom: 16px; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  .presets { display: flex; gap: 6px; margin-bottom: 8px; }
+  .presets button {
+    flex: 1; padding: 6px 0; border: 1px solid var(--border); background: #fff;
+    border-radius: 6px; font: inherit; cursor: pointer; color: var(--ink);
+  }
+  .presets button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .field { flex: 1; }
+  input {
+    width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+    font: inherit; color: var(--ink);
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  #selection { margin-bottom: 16px; }
+  #selection .item {
+    display: flex; justify-content: space-between; gap: 8px;
+    padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 4px;
+  }
+  #selection .item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #selection .item .size { color: var(--muted); white-space: nowrap; }
+  #selection .empty { color: var(--muted); padding: 6px 0; }
+  #export {
+    width: 100%; padding: 9px 0; border: 0; border-radius: 6px;
+    background: var(--accent); color: var(--accent-ink);
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  #export:disabled { opacity: 0.5; cursor: default; }
+  #status { color: var(--muted); margin-top: 10px; min-height: 16px; }
+</style>
+</head>
+<body>
+  <h1>figma-export</h1>
+  <div class="sub">PNG export with real DPI metadata</div>
+
+  <label>DPI</label>
+  <div class="presets" id="presets">
+    <button data-dpi="72">72</button>
+    <button data-dpi="150">150</button>
+    <button data-dpi="300" class="active">300</button>
+    <button data-dpi="600">600</button>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label for="dpi">Custom DPI</label>
+      <input id="dpi" type="number" min="1" max="10000" value="300" />
+    </div>
+    <div class="field">
+      <label for="scale">Export scale</label>
+      <input id="scale" type="number" min="0.1" max="8" step="0.1" value="1" />
+    </div>
+  </div>
+
+  <label>Selection</label>
+  <div id="selection"><div class="empty">Nothing selected</div></div>
+
+  <button id="export">Export PNG</button>
+  <div id="status"></div>
+
+<script>
+'use strict'
+
+// ---------- PNG pHYs chunk embedding ----------
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    table[n] = c >>> 0
+  }
+  return table
+})()
+
+const crc32 = bytes => {
+  let crc = 0xffffffff
+  for (let i = 0; i < bytes.length; i++) {
+    crc = CRC_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8)
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+// Rewrites (or inserts) the pHYs chunk so the PNG reports the given DPI.
+// Also drops any eXIf chunk, whose embedded resolution would override pHYs
+// in some readers (Figma exports never include one; retagged files might).
+const withDpi = (png, dpi) => {
+  const ppm = Math.round(dpi / 0.0254) // pixels per metre
+
+  const phys = new Uint8Array(21)
+  const view = new DataView(phys.buffer)
+  view.setUint32(0, 9) // data length
+  phys.set([0x70, 0x48, 0x59, 0x73], 4) // "pHYs"
+  view.setUint32(8, ppm) // x pixels per unit
+  view.setUint32(12, ppm) // y pixels per unit
+  phys[16] = 1 // unit: metre
+  view.setUint32(17, crc32(phys.subarray(4, 17)))
+
+  // Walk chunks: copy everything except an existing pHYs, insert ours after IHDR.
+  const out = [png.subarray(0, 8)] // signature
+  let offset = 8
+  let inserted = false
+  const data = new DataView(png.buffer, png.byteOffset, png.byteLength)
+  while (offset < png.length) {
+    const length = data.getUint32(offset)
+    const type = String.fromCharCode(png[offset + 4], png[offset + 5], png[offset + 6], png[offset + 7])
+    const end = offset + 12 + length
+    if (type !== 'pHYs' && type !== 'eXIf') out.push(png.subarray(offset, end))
+    if (type === 'IHDR' && !inserted) {
+      out.push(phys)
+      inserted = true
+    }
+    offset = end
+  }
+
+  const total = out.reduce((n, part) => n + part.length, 0)
+  const result = new Uint8Array(total)
+  let cursor = 0
+  for (const part of out) {
+    result.set(part, cursor)
+    cursor += part.length
+  }
+  return result
+}
+
+// ---------- UI wiring ----------
+
+const dpiInput = document.getElementById('dpi')
+const scaleInput = document.getElementById('scale')
+const presets = document.getElementById('presets')
+const selectionEl = document.getElementById('selection')
+const exportBtn = document.getElementById('export')
+const statusEl = document.getElementById('status')
+
+let selectionItems = []
+
+const syncPresets = () => {
+  for (const btn of presets.querySelectorAll('button')) {
+    btn.classList.toggle('active', Number(btn.dataset.dpi) === Number(dpiInput.value))
+  }
+}
+
+presets.addEventListener('click', event => {
+  const btn = event.target.closest('button')
+  if (!btn) return
+  dpiInput.value = btn.dataset.dpi
+  syncPresets()
+  renderSelection()
+})
+
+dpiInput.addEventListener('input', () => {
+  syncPresets()
+  renderSelection()
+})
+scaleInput.addEventListener('input', renderSelection)
+
+function renderSelection() {
+  const dpi = Number(dpiInput.value) || 300
+  const scale = Number(scaleInput.value) || 1
+  if (selectionItems.length === 0) {
+    selectionEl.innerHTML = '<div class="empty">Nothing selected</div>'
+    return
+  }
+  selectionEl.innerHTML = selectionItems
+    .map(item => {
+      const px = `${Math.round(item.width * scale)} × ${Math.round(item.height * scale)} px`
+      const mm = `${((item.width * scale) / dpi * 25.4).toFixed(1)} × ${((item.height * scale) / dpi * 25.4).toFixed(1)} mm`
+      return `<div class="item"><span class="name">${escapeHtml(item.name)}</span><span class="size">${px} · ${mm}</span></div>`
+    })
+    .join('')
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
+const sanitizeFilename = name => name.replace(/[\/\\:*?"<>|]/g, '-').trim() || 'export'
+
+let pendingDownloads = Promise.resolve()
+
+const download = (bytes, filename) => {
+  // Chain with a small delay so multi-file exports are not blocked by the browser.
+  pendingDownloads = pendingDownloads.then(
+    () =>
+      new Promise(resolve => {
+        const blob = new Blob([bytes], { type: 'image/png' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        a.click()
+        setTimeout(() => {
+          URL.revokeObjectURL(url)
+          resolve()
+        }, 250)
+      })
+  )
+}
+
+exportBtn.addEventListener('click', () => {
+  exportBtn.disabled = true
+  statusEl.textContent = 'Exporting…'
+  parent.postMessage(
+    { pluginMessage: { type: 'export', scale: Number(scaleInput.value) || 1 } },
+    '*'
+  )
+})
+
+onmessage = event => {
+  const msg = event.data.pluginMessage
+  if (!msg) return
+
+  if (msg.type === 'selection') {
+    selectionItems = msg.items
+    renderSelection()
+  }
+
+  if (msg.type === 'file') {
+    const dpi = Number(dpiInput.value) || 300
+    const tagged = withDpi(new Uint8Array(msg.bytes), dpi)
+    download(tagged, `${sanitizeFilename(msg.name)}.png`)
+  }
+
+  if (msg.type === 'done') {
+    exportBtn.disabled = false
+    statusEl.textContent =
+      msg.count > 0
+        ? `Done — ${msg.count} file${msg.count === 1 ? '' : 's'} at ${dpiInput.value} DPI`
+        : 'Nothing exported'
+  }
+}
+</script>
+</body>
+</html>
