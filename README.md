@@ -49,6 +49,10 @@ A prebuilt `code.js` is committed, so steps 1's build is optional — clone and 
 
 A PNG stores physical density in an optional `pHYs` chunk (pixels per metre). The plugin controller (`code.ts`) exports raw PNG bytes via `exportAsync`; the UI (`ui.html`) walks the PNG chunk list, drops any existing `pHYs`, inserts one after `IHDR` with `round(dpi / 0.0254)` pixels/metre and a fresh CRC32, and downloads the result.
 
+## Publishing
+
+Community submission assets and listing copy live in [`COMMUNITY.md`](COMMUNITY.md) and [`assets/`](assets/).
+
 ## License
 
 MIT © [Magoz](https://github.com/magoz)

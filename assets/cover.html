@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  body {
+    width: 1920px; height: 960px;
+    background: #17102e;
+    display: flex; align-items: center;
+    font-family: Inter, -apple-system, sans-serif;
+    overflow: hidden; position: relative;
+  }
+  .left { padding-left: 160px; width: 1050px; }
+  h1 { font-size: 96px; font-weight: 800; color: #ffffff; letter-spacing: -2px; }
+  h1 .accent { color: #8b4cff; }
+  .tagline { font-size: 40px; font-weight: 500; color: rgba(255,255,255,0.75); margin-top: 24px; }
+  .pills { display: flex; align-items: center; gap: 24px; margin-top: 64px; }
+  .pill {
+    font-size: 34px; font-weight: 700; padding: 18px 36px; border-radius: 16px;
+  }
+  .pill.wrong { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); text-decoration: line-through; }
+  .pill.right { background: #8b4cff; color: #fff; }
+  .arrow { font-size: 40px; color: rgba(255,255,255,0.5); }
+  .note { margin-top: 28px; font-size: 26px; color: rgba(255,255,255,0.45); }
+
+  /* plugin UI mock */
+  .mock {
+    position: absolute; right: 150px; top: 130px;
+    width: 480px; background: #ffffff; border-radius: 20px;
+    padding: 36px; box-shadow: 0 40px 120px rgba(0,0,0,0.55);
+  }
+  .mock h2 { font-size: 30px; font-weight: 700; color: #1a1a2e; }
+  .mock .sub { font-size: 20px; color: #6b6b80; margin: 6px 0 30px; }
+  .mock label { display: block; font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 12px; }
+  .presets { display: flex; gap: 12px; margin-bottom: 30px; }
+  .presets div {
+    flex: 1; text-align: center; padding: 14px 0; font-size: 22px; font-weight: 600;
+    border: 2px solid #e4e4ee; border-radius: 12px; color: #1a1a2e;
+  }
+  .presets .active { background: #8b4cff; border-color: #8b4cff; color: #fff; }
+  .sel {
+    display: flex; justify-content: space-between; padding: 14px 16px;
+    border: 2px solid #e4e4ee; border-radius: 12px; font-size: 20px;
+    color: #1a1a2e; margin-bottom: 12px;
+  }
+  .sel span:last-child { color: #6b6b80; }
+  .btn {
+    margin-top: 20px; background: #8b4cff; color: #fff; text-align: center;
+    font-size: 24px; font-weight: 700; padding: 20px 0; border-radius: 12px;
+  }
+</style>
+</head>
+<body>
+  <div class="left">
+    <h1>figma-<span class="accent">export</span></h1>
+    <div class="tagline">PNG export with real DPI metadata</div>
+    <div class="pills">
+      <div class="pill wrong">72 DPI</div>
+      <div class="arrow">→</div>
+      <div class="pill right">300 DPI</div>
+    </div>
+    <div class="note">Prints at the exact physical size you designed. No external tools.</div>
+  </div>
+
+  <div class="mock">
+    <h2>figma-export</h2>
+    <div class="sub">PNG export with real DPI metadata</div>
+    <label>DPI</label>
+    <div class="presets">
+      <div>72</div><div>150</div><div class="active">300</div><div>600</div>
+    </div>
+    <label>Selection</label>
+    <div class="sel"><span>Business card — Front</span><span>650 × 1004 px · 55.0 × 85.0 mm</span></div>
+    <div class="sel"><span>Business card — Back</span><span>650 × 1004 px · 55.0 × 85.0 mm</span></div>
+    <div class="btn">Export PNG</div>
+  </div>
+</body>
+</html>
